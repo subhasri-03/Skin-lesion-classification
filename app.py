@@ -8,7 +8,7 @@ import os
 app = Flask(__name__)
 
 # Load your trained model
-MODEL_PATH = "skinlesionmodel.h5"
+MODEL_PATH = "C:/Skin Classification/Skin-lesion-classification/skinlesionmodel.h5"
 model = load_model(MODEL_PATH)
 
 # Define your class labels (change this according to your dataset)
