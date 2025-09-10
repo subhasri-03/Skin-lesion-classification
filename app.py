@@ -1,56 +1,59 @@
-from flask import Flask, request, jsonify
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.image import img_to_array
-from PIL import Image
-import numpy as np
 import os
+import numpy as np
+import pickle
+from flask import Flask, render_template, request
+from tensorflow.keras.models import load_model
+from tensorflow.keras.preprocessing import image
 
-app = Flask(__name__)
+# === CONFIG ===
+IMG_SIZE = 224
+UPLOAD_FOLDER = "static"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Load your trained model
-MODEL_PATH = "C:/Skin Classification/Skin-lesion-classification/skinlesionmodel.h5"
+# === LOAD MODEL ===
+MODEL_PATH = "skinlesionmodel.h5"
 model = load_model(MODEL_PATH)
 
-# Define your class labels (change this according to your dataset)
-CLASS_NAMES = [
-    "Melanocytic nevi", 
-    "Melanoma", 
-    "Benign keratosis-like lesions", 
-    "Basal cell carcinoma", 
-    "Actinic keratoses", 
-    "Vascular lesions", 
-    "Dermatofibroma"
-]
+# === LOAD CLASS NAMES ===
+with open("label1_classes.pkl", "rb") as f:
+    class_names = pickle.load(f)  # This should be a list of class names
+
+# === FLASK APP ===
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return render_template("index.html")  # Make sure index.html exists in "templates" folder
 
 @app.route("/predict", methods=["POST"])
 def predict():
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-    
+        return render_template("index.html", prediction="No file uploaded")
+
     file = request.files["file"]
     if file.filename == "":
-        return jsonify({"error": "Empty file"}), 400
+        return render_template("index.html", prediction="No file selected")
 
-    try:
-        # Preprocess the image
-        image = Image.open(file).convert("RGB")
-        image = image.resize((224, 224))  # ResNet input size
-        img_array = img_to_array(image) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
+    # Save uploaded file
+    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(filepath)
 
-        # Model prediction
-        preds = model.predict(img_array)
-        predicted_class = np.argmax(preds, axis=1)[0]
-        confidence = round(float(np.max(preds)) * 100, 2)
+    # Preprocess image
+    img = image.load_img(filepath, target_size=(IMG_SIZE, IMG_SIZE))
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = img_array / 255.0  # Normalize if model was trained with 0-1 scaling
 
-        return jsonify({
-            "class": CLASS_NAMES[predicted_class],
-            "confidence": confidence
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    # Predict
+    preds = model.predict(img_array)
+    predicted_class = np.argmax(preds)
+    confidence = float(np.max(preds) * 100)
 
+    result = f"Prediction: {class_names[predicted_class]} (Confidence: {confidence:.2f}%)"
+
+    return render_template("index.html", prediction=result, uploaded_image=file.filename)
 
 if __name__ == "__main__":
     app.run(debug=True)
+
 
