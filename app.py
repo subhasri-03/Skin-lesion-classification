@@ -1,48 +1,56 @@
-import streamlit as st
-import numpy as np
-import time
-import math
-from PIL import Image
+from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
-import joblib  # For loading the label encoder
+from PIL import Image
+import numpy as np
+import os
 
-# Set up the Streamlit page
-st.set_page_config(page_title="Skin Lesion Classifier", page_icon="🧬", layout="wide")
+app = Flask(__name__)
 
-st.title("🧬 Skin Lesion Classification App")
-st.write("Upload a skin lesion image and the model will classify its type using deep learning.")
+# Load your trained model
+MODEL_PATH = "skinlesionmodel.h5"
+model = load_model(MODEL_PATH)
 
-# Sidebar developer info
-st.sidebar.write("Developed by:\n**Subhasri P**")
-st.sidebar.markdown("---")
-st.sidebar.markdown("🔗 [GitHub](https://github.com/subhasri-03)")
-st.sidebar.markdown("📧 23am064@kpriet.ac.in")
+# Define your class labels (change this according to your dataset)
+CLASS_NAMES = [
+    "Melanocytic nevi", 
+    "Melanoma", 
+    "Benign keratosis-like lesions", 
+    "Basal cell carcinoma", 
+    "Actinic keratoses", 
+    "Vascular lesions", 
+    "Dermatofibroma"
+]
 
-# Load model and label encoder
-model = load_model("skinlesionmodel.h5")
-le = joblib.load("label_encoder.pkl")  # Save using: joblib.dump(le, 'label_encoder.pkl')
+@app.route("/predict", methods=["POST"])
+def predict():
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "Empty file"}), 400
 
-# File uploader
-uploaded_file = st.file_uploader("📂 Choose a skin lesion image...", type=["jpg", "jpeg", "png"])
+    try:
+        # Preprocess the image
+        image = Image.open(file).convert("RGB")
+        image = image.resize((224, 224))  # ResNet input size
+        img_array = img_to_array(image) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded Image", use_column_width=False)
+        # Model prediction
+        preds = model.predict(img_array)
+        predicted_class = np.argmax(preds, axis=1)[0]
+        confidence = round(float(np.max(preds)) * 100, 2)
 
-    img = image.resize((224, 224))
-    img = img_to_array(img) / 255.0
-    img = np.expand_dims(img, axis=0)
+        return jsonify({
+            "class": CLASS_NAMES[predicted_class],
+            "confidence": confidence
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    with st.spinner("🔍 Classifying the lesion... Please wait"):
-        time.sleep(2)
-        predictions = model.predict(img)
-        predicted_class = np.argmax(predictions, axis=1)[0]
-        confidence = float(predictions[0][predicted_class])
-        class_name = le.classes_[predicted_class]
 
-    st.success(f"### 🏷️ Predicted Lesion Type: **{class_name}**")
-    st.write(f"Confidence Level: **{confidence * 100:.2f}%**")
+if __name__ == "__main__":
+    app.run(debug=True)
 
-    # Optional: Add basic guidance or interpretation
-    st.info("📝 This is a deep learning-based prediction. Please consult a dermatologist for medical confirmation.")
