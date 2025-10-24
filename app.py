@@ -54,6 +54,6 @@ def predict():
     return render_template("index.html", prediction=result, uploaded_image=file.filename)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
 
 
